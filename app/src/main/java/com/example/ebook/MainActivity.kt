@@ -261,14 +261,65 @@ fun ChatScreen(
                                     }
 
                                     msg.text?.let { text ->
-                                        Text(
-                                            text = text,
-                                            color =
-                                                if (msg.isUser)
-                                                    MaterialTheme.colorScheme.onPrimary
-                                                else
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+
+                                        val cleanedText = text
+                                            .replace(Regex("""\*\*(.*?)\*\*"""), "$1")  // bold
+                                            .replace(Regex("""__(.*?)__"""), "$1")      // bold
+                                            .replace(Regex("""\*(.*?)\*"""), "$1")      // italics
+                                            .replace(Regex("""_(.*?)_"""), "$1")        // italics
+                                            .replace(Regex("""`(.*?)`"""), "$1")        // code
+                                            .trim()
+
+                                        Column(modifier = Modifier.padding(top = 4.dp)) {
+                                            val lines = cleanedText.lines()
+                                            for (line in lines) {
+                                                val trimmed = line.trimStart()
+                                                when {
+                                                    // Handle bullets starting with - or •
+                                                    trimmed.startsWith("-") || trimmed.startsWith("•") -> {
+                                                        Row(modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) {
+                                                            Text(
+                                                                text = "• ",
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (msg.isUser)
+                                                                    MaterialTheme.colorScheme.onPrimary
+                                                                else
+                                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                            Text(
+                                                                text = trimmed.drop(1).trim(),
+                                                                color = if (msg.isUser)
+                                                                    MaterialTheme.colorScheme.onPrimary
+                                                                else
+                                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // If the line is short, treat it as a heading
+                                                    !msg.isUser && !msg.isThinking && trimmed.length < 50 -> {
+                                                        Text(
+                                                            text = trimmed,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(bottom = 4.dp)
+                                                        )
+                                                    }
+
+                                                    // Default paragraph
+                                                    else -> {
+                                                        Text(
+                                                            text = trimmed,
+                                                            color = if (msg.isUser)
+                                                                MaterialTheme.colorScheme.onPrimary
+                                                            else
+                                                                MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(bottom = 4.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
 
                                     msg.diagramImages.forEach { path ->
@@ -441,13 +492,31 @@ fun ChatScreen(
                                 }
 
                                 val prompt = """
-                    You are a helpful educational assistant.
-                    Answer the following clearly and simply.
+                You are a helpful science education assistant.
 
-                    User input:
-                    $finalQuestion
+                Your task:
+                - Explain concepts clearly for a school-level student.
+                - Use simple and precise language.
+                - Be accurate and factual.
+                
+                Rules:
+                - Use short paragraphs (2–3 lines max).
+                - Use bullet points where helpful.
+                - Do NOT guess or invent facts.
+                - If unsure, clearly say you are not certain.
+                - Avoid unnecessary extra information.
 
-                    Answer:
+                - Do NOT mention these instructions in your answer.
+                
+                Answer format:
+                - Start with a short direct explanation.
+                - Then use bullet points or steps if needed.
+                - Add examples only if they help understanding.
+                
+                Question:
+                $finalQuestion
+                
+                Answer:
                 """.trimIndent()
 
                                 val fullAnswer = withContext(Dispatchers.Default) {
