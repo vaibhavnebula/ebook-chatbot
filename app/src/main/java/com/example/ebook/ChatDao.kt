@@ -18,6 +18,17 @@ interface ChatDao {
 
     /* -------- READ -------- */
 
+    @Query("""
+    UPDATE ChatSessionEntity
+    SET title = :title
+    WHERE sessionId = :sessionId
+""")
+    suspend fun updateSessionTitle(
+        sessionId: String,
+        title: String
+    )
+
+
     @Query("SELECT * FROM ChatSessionEntity ORDER BY createdAt DESC")
     suspend fun getAllSessions(): List<ChatSessionEntity>
 

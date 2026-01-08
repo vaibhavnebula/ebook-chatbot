@@ -32,8 +32,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.Assistant
+import androidx.compose.material.icons.outlined.Send
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,6 +53,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         /* -------- ROOM DATABASE INIT (NEW) -------- */
         val db = Room.databaseBuilder(
@@ -100,6 +110,7 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var userInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -145,7 +156,7 @@ fun ChatScreen(
                         showHistory = false
                         sessionCreated = false
                     }) {
-                        Icon(Icons.Default.Add, contentDescription = "New Chat")
+                        Icon(Icons.Outlined.Assistant, contentDescription = "New Chat")
                     }
                 }
             )
@@ -172,6 +183,7 @@ fun ChatScreen(
                         }
 
                         currentSessionId = sessionId
+                        sessionCreated = true
                         showHistory = false
                     }
                 }
@@ -183,37 +195,52 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+
 //                .padding(16.dp)
         ) {
 
             /* -------------------- CHAT LIST -------------------- */
             LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState  //  ADDED: attach scroll state
-            ) {
-                items(messages) { msg ->
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp),
+                state = listState
+            )
+            {
+            items(messages) { msg ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
                         horizontalArrangement =
                             if (msg.isUser) Arrangement.End else Arrangement.Start
                     ) {
                         Surface(
-                            shape = MaterialTheme.shapes.medium,
+                            shape = MaterialTheme.shapes.large,
+                            tonalElevation = 2.dp,
                             color =
                                 if (msg.isUser)
                                     MaterialTheme.colorScheme.primary
                                 else
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .widthIn(max = 300.dp)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
+                            Column(
+                                modifier = Modifier.padding(
+                                    horizontal = 14.dp,
+                                    vertical = 4.dp
+                                )
+                            ) {
 
-                                msg.imageUri?.let { uri ->
+
+                            msg.imageUri?.let { uri ->
                                     AsyncImage(
                                         model = uri,
                                         contentDescription = "Uploaded image",
                                         modifier = Modifier
                                             .size(180.dp)
-                                            .padding(bottom = 6.dp)
+                                            .padding(bottom = 4.dp)
                                     )
                                 }
 
@@ -233,13 +260,13 @@ fun ChatScreen(
                                         contentDescription = null,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(top = 8.dp)
+                                            .padding(top = 10.dp)
                                     )
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
                 // 👇 ADDED: small bottom padding so last message isn't clipped
                 item {
@@ -249,154 +276,197 @@ fun ChatScreen(
 
             /* -------------------- SELECTED IMAGE PREVIEW -------------------- */
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()              // 👈 THIS MAKES IT MOVE
-                    .navigationBarsPadding()
-                    .padding(12.dp)
-            ) {
-                selectedImageUri?.let { uri ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
+            if (selectedImageUri != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Box {
                         AsyncImage(
-                            model = uri,
+                            model = selectedImageUri,
                             contentDescription = "Selected image",
-                            modifier = Modifier
-                                .size(100.dp)
-                                .padding(4.dp)
+                            modifier = Modifier.size(96.dp)
                         )
-                        IconButton(onClick = { selectedImageUri = null }) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove image")
+
+                        IconButton(
+                            onClick = { selectedImageUri = null },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 3.dp, y = (-6).dp)
+                                .size(28.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 4.dp
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove image",
+                                    modifier = Modifier.padding(4.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            /* -------------------- INPUT ROW -------------------- */
-            Row(verticalAlignment = Alignment.CenterVertically) {
 
-                IconButton(
-                    onClick = { imagePickerLauncher.launch("image/*") }
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Upload Image")
-                }
+
+            /* -------------------- INPUT ROW -------------------- */
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 2.dp,top = 0.dp)
+
+
+            ) {
 
                 OutlinedTextField(
                     value = userInput,
                     onValueChange = { userInput = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp),
                     placeholder = { Text("Ask a question") },
-                    singleLine = true
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    leadingIcon = {
+                        IconButton(
+                            onClick = { imagePickerLauncher.launch("image/*") }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddCircle,
+                                contentDescription = "Attach file"
+                            )
+                        }
+                    }
                 )
+
+
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Button(
-                    enabled = !isLoading,
-                    onClick = {
-                        if (userInput.isBlank() && selectedImageUri == null) return@Button
+                Surface(
+                    shape = CircleShape,
+                    color = if (isLoading)
+                        MaterialTheme.colorScheme.surfaceVariant
+                    else
+                        MaterialTheme.colorScheme.primary,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    IconButton(
+                        enabled = !isLoading,
+                        onClick = {
+                            keyboardController?.hide()
 
-                        val textToSend = userInput.takeIf { it.isNotBlank() }
-                        val imageToSend = selectedImageUri
+                            if (userInput.isBlank() && selectedImageUri == null) return@IconButton
 
-                        userInput = ""
-                        selectedImageUri = null
-                        isLoading = true
+                            val textToSend = userInput.takeIf { it.isNotBlank() }
+                            val imageToSend = selectedImageUri
 
-                        messages = messages + ChatMessage(
-                            text = textToSend,
-                            imageUri = imageToSend,
-                            isUser = true
-                        ) + ChatMessage(
-                            text = "Thinking...",
-                            isUser = false,
-                            isThinking = true
-                        )
+                            userInput = ""
+                            selectedImageUri = null
+                            isLoading = true
 
-                        scope.launch {
+                            messages = messages + ChatMessage(
+                                text = textToSend,
+                                imageUri = imageToSend,
+                                isUser = true
+                            ) + ChatMessage(
+                                text = "Thinking...",
+                                isUser = false,
+                                isThinking = true
+                            )
 
-                            if (!sessionCreated) {
-                                chatDao.insertSession(
-                                    ChatSessionEntity(
+                            scope.launch {
+                                /* 🔥 KEEP YOUR EXISTING LOGIC UNCHANGED */
+                                if (!sessionCreated && !textToSend.isNullOrBlank()) {
+                                    chatDao.insertSession(
+                                        ChatSessionEntity(
+                                            sessionId = currentSessionId,
+                                            title = textToSend.take(40),
+                                            createdAt = System.currentTimeMillis()
+                                        )
+                                    )
+                                    sessionCreated = true
+                                }
+
+
+                                chatDao.insertMessage(
+                                    ChatMessageEntity(
                                         sessionId = currentSessionId,
-                                        title = textToSend ?: "New Chat",
-                                        createdAt = System.currentTimeMillis()
+                                        text = textToSend ?: "",
+                                        isUser = true,
+                                        timestamp = System.currentTimeMillis(),
+                                        imageUri = imageToSend?.toString()
                                     )
                                 )
-                                sessionCreated = true
-                            }
 
-                            chatDao.insertMessage(
-                                ChatMessageEntity(
-                                    sessionId = currentSessionId,
-                                    text = textToSend ?: "",
-                                    isUser = true,
-                                    timestamp = System.currentTimeMillis(),
-                                    imageUri = imageToSend?.toString()
-                                )
-                            )
-                            /* -------- OCR -------- */
-                            val ocrText = imageToSend?.let {
-                                try {
-                                    extractTextFromImage(context, it)
-                                } catch (e: Exception) {
-                                    ""
+                                val ocrText = imageToSend?.let {
+                                    try { extractTextFromImage(context, it) } catch (e: Exception) { "" }
                                 }
-                            }
-                            /* -------- FINAL QUESTION -------- */
-                            val finalQuestion = buildString {
-                                textToSend?.let { append(it) }
-                                if (!ocrText.isNullOrBlank()) {
-                                    append("\n\nText found in image:\n")
-                                    append(ocrText)
+
+                                val finalQuestion = buildString {
+                                    textToSend?.let { append(it) }
+                                    if (!ocrText.isNullOrBlank()) {
+                                        append("\n\nText found in image:\n")
+                                        append(ocrText)
+                                    }
                                 }
-                            }
 
-                            val prompt = """
-                                            You are a helpful educational assistant.
-                                            Answer the following clearly and simply.
-                                            
-                                            User input:
-                                            $finalQuestion
-                                            
-                                            Answer:
-                                            """.trimIndent()
+                                val prompt = """
+                    You are a helpful educational assistant.
+                    Answer the following clearly and simply.
 
-                            val answer = withContext(Dispatchers.Default) {
-                                llm.generateResponse(prompt)
-                            }
+                    User input:
+                    $finalQuestion
 
-                            /* -------- DIAGRAM DETECTION -------- */
-                            val topic = detectDiagramTopic(finalQuestion + " " + answer)
-                            val diagramImages =
-                                topic?.let { getDiagramImages(context, it) } ?: emptyList()
+                    Answer:
+                """.trimIndent()
 
-                            chatDao.insertMessage(
-                                ChatMessageEntity(
-                                    sessionId = currentSessionId,
-                                    text = answer,
-                                    isUser = false,
-                                    timestamp = System.currentTimeMillis(),
-                                    diagramImages = diagramImages.joinToString(",")
-                                )
-                            )
+                                val answer = withContext(Dispatchers.Default) {
+                                    llm.generateResponse(prompt)
+                                }
 
-                            messages = messages.dropLast(1) +
-                                    ChatMessage(
+                                val topic = detectDiagramTopic(finalQuestion + " " + answer)
+                                val diagramImages =
+                                    topic?.let { getDiagramImages(context, it) } ?: emptyList()
+
+                                chatDao.insertMessage(
+                                    ChatMessageEntity(
+                                        sessionId = currentSessionId,
                                         text = answer,
                                         isUser = false,
-                                        diagramImages = diagramImages
+                                        timestamp = System.currentTimeMillis(),
+                                        diagramImages = diagramImages.joinToString(",")
                                     )
+                                )
 
-                            isLoading = false
+                                messages = messages.dropLast(1) +
+                                        ChatMessage(
+                                            text = answer,
+                                            isUser = false,
+                                            diagramImages = diagramImages
+                                        )
+
+                                isLoading = false
+                            }
                         }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Send,
+                            contentDescription = "Send",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
-                ) {
-                    Text("Ask")
                 }
+
             }
         }
     }
