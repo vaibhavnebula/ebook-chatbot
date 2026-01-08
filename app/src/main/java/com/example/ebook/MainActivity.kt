@@ -43,6 +43,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.time.delay
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,8 +99,10 @@ data class ChatMessage(
     val imageUri: Uri? = null,
     val diagramImages: List<String> = emptyList(),
     val isUser: Boolean,
-    val isThinking: Boolean = false
+    val isThinking: Boolean = false,
+    val isStreaming: Boolean = false
 )
+
 
 /* -------------------- UI -------------------- */
 
@@ -207,6 +211,7 @@ fun ChatScreen(
                 state = listState
             )
             {
+
             items(messages) { msg ->
                     Row(
                         modifier = Modifier
@@ -215,56 +220,70 @@ fun ChatScreen(
                         horizontalArrangement =
                             if (msg.isUser) Arrangement.End else Arrangement.Start
                     ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.large,
-                            tonalElevation = 2.dp,
-                            color =
-                                if (msg.isUser)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .widthIn(max = 300.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(
-                                    horizontal = 14.dp,
-                                    vertical = 4.dp
-                                )
+                        val isCursorOnly =
+                            !msg.isUser && msg.isStreaming && msg.text.isNullOrEmpty()
+
+                        if (isCursorOnly) {
+                            // 👇 Cursor WITHOUT background
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
-
-
-                            msg.imageUri?.let { uri ->
-                                    AsyncImage(
-                                        model = uri,
-                                        contentDescription = "Uploaded image",
-                                        modifier = Modifier
-                                            .size(180.dp)
-                                            .padding(bottom = 4.dp)
+                                BlinkingCursor()
+                            }
+                        } else {
+                            // 👇 Normal chat bubble
+                            Surface(
+                                shape = MaterialTheme.shapes.large,
+                                tonalElevation = 2.dp,
+                                color =
+                                    if (msg.isUser)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.widthIn(max = 300.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(
+                                        horizontal = 14.dp,
+                                        vertical = 8.dp
                                     )
-                                }
+                                ) {
 
-                                msg.text?.let { text ->
-                                    Text(
-                                        text = text,
-                                        color =
-                                            if (msg.isUser)
-                                                MaterialTheme.colorScheme.onPrimary
-                                            else
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                msg.diagramImages.forEach { path ->
-                                    AsyncImage(
-                                        model = "file:///android_asset/diagrams/$path",
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 10.dp)
-                                    )
+                                    msg.imageUri?.let { uri ->
+                                        AsyncImage(
+                                            model = uri,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(180.dp)
+                                                .padding(bottom = 4.dp)
+                                        )
+                                    }
+
+                                    msg.text?.let { text ->
+                                        Text(
+                                            text = text,
+                                            color =
+                                                if (msg.isUser)
+                                                    MaterialTheme.colorScheme.onPrimary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    msg.diagramImages.forEach { path ->
+                                        AsyncImage(
+                                            model = "file:///android_asset/diagrams/$path",
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 10.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
+
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                 }
@@ -379,10 +398,11 @@ fun ChatScreen(
                                 imageUri = imageToSend,
                                 isUser = true
                             ) + ChatMessage(
-                                text = "Thinking...",
+                                text = "",
                                 isUser = false,
-                                isThinking = true
+                                isStreaming = true
                             )
+
 
                             scope.launch {
                                 /* 🔥 KEEP YOUR EXISTING LOGIC UNCHANGED */
@@ -430,18 +450,42 @@ fun ChatScreen(
                     Answer:
                 """.trimIndent()
 
-                                val answer = withContext(Dispatchers.Default) {
+                                val fullAnswer = withContext(Dispatchers.Default) {
                                     llm.generateResponse(prompt)
                                 }
 
-                                val topic = detectDiagramTopic(finalQuestion + " " + answer)
+                                val lines = fullAnswer.lines()
+
+                                messages = messages.dropLast(1) +
+                                        ChatMessage(
+                                            text = "",
+                                            isUser = false,
+                                            isStreaming = true
+                                        )
+
+                                for (line in lines) {
+                                    delay(120) // controls typing speed
+
+                                    messages = messages.dropLast(1) +
+                                            messages.last().copy(
+                                                text = messages.last().text + line + "\n"
+                                            )
+                                }
+
+                                messages = messages.dropLast(1) +
+                                        messages.last().copy(
+                                            isStreaming = false
+                                        )
+
+
+                                val topic = detectDiagramTopic(finalQuestion + " " + fullAnswer)
                                 val diagramImages =
                                     topic?.let { getDiagramImages(context, it) } ?: emptyList()
 
                                 chatDao.insertMessage(
                                     ChatMessageEntity(
                                         sessionId = currentSessionId,
-                                        text = answer,
+                                        text = fullAnswer,
                                         isUser = false,
                                         timestamp = System.currentTimeMillis(),
                                         diagramImages = diagramImages.joinToString(",")
@@ -450,7 +494,7 @@ fun ChatScreen(
 
                                 messages = messages.dropLast(1) +
                                         ChatMessage(
-                                            text = answer,
+                                            text = fullAnswer,
                                             isUser = false,
                                             diagramImages = diagramImages
                                         )
@@ -471,6 +515,24 @@ fun ChatScreen(
         }
     }
 }
+
+@Composable
+fun BlinkingCursor() {
+    var visible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            visible = !visible
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
+    Text(
+        text = if (visible) "▍" else "",
+        style = MaterialTheme.typography.bodyLarge
+    )
+}
+
 
 /* -------------------- FILE COPY (LLM ONLY) -------------------- */
 private fun copyAssetToInternalStorage(
