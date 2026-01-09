@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
                     "gemma3-1b-it-int4.task"
                 )
             )
-            .setMaxTokens(1024)
+            .setMaxTokens(2048)
             .build()
 
         llm = LlmInference.createFromOptions(this, llmOptions)
