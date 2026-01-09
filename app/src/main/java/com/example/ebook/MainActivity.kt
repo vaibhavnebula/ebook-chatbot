@@ -28,7 +28,14 @@ import androidx.room.Room
 import java.util.UUID
 import androidx.compose.material.icons.filled.Menu
 import android.graphics.BitmapFactory
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -43,6 +50,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.time.delay
 
@@ -587,20 +595,35 @@ fun ChatScreen(
 
 @Composable
 fun BlinkingCursor() {
-    var visible by remember { mutableStateOf(true) }
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            visible = !visible
-            kotlinx.coroutines.delay(500)
-        }
-    }
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = 700,
+                easing = FastOutSlowInEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
 
-    Text(
-        text = if (visible) "▍" else "",
-        style = MaterialTheme.typography.bodyLarge
+    Box(
+        modifier = Modifier
+            .size(12.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(
+                color = MaterialTheme.colorScheme.primary,
+                shape = CircleShape
+            )
     )
 }
+
 
 
 /* -------------------- FILE COPY (LLM ONLY) -------------------- */
