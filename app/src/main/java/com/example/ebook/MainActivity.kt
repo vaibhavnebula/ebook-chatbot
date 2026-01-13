@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
             .setModelPath(
                 copyAssetToInternalStorage(
                     this,
-                    "gemma3-1b-it-int4.task"
+                    "Qwen2.5-1.5B-Instruct_seq128_q8_ekv4096.task"
                 )
             )
             .setMaxTokens(2048)
@@ -498,114 +498,43 @@ fun ChatScreen(
                                         append(ocrText)
                                     }
                                 }
+                                val conversationContext =
+                                    buildConversationContext(messages)
 
                                 val prompt = """
-                                    You are a helpful education assistant.
-                                    Always generate the full and complete answer in one continuous response; do not stop, truncate, or break the answer midway.
+                                    stay relevant to the topic explain it as per user requested.
                                     
-                                        Your role:
-                                        - If the question asks only to identify a person holding a role or title (for example, “Who is the CEO of Google?”), respond with only the person’s name
-                                        - Carefully read and explain the given question.
-                                        - If OCR text is present, carefully analyze and explain it.
-                                        - Explain concepts clearly using simple and precise language.
-                                        - Be accurate, factual, and concise.
-                                        - Never guess or invent information.
-                                        - If something is unclear, incomplete, or possibly incorrect, clearly say so.
+                                    STRICT ANSWER RULES (follow in order):
+                                    1. If the user asks for a FACTUAL VALUE (formula, name, CEO, year, symbol):
+                                       - FIRST line must contain ONLY the direct answer.
+                                       
+                                    2. If the user asks "who", "formula of", "name of":
+                                       - Do NOT start with explanation.
+                                       - Give the answer immediately In Bold.
+                                       
+                                    3. FOR DEFINITIONS:
+                                       - Start directly with the definition.
+                                       - If the term has a UNIT, give the unit on the NEXT line.
+
+                                    4. If the user asks for explanation, derivation, example, or working:
+                                       - Start with a ONE-SENTENCE definition.
+                                       - On the NEXT line, give the formula (only if a formula exists).
+                                       - Then explain the concept step by step in simple points.
+                                       - At the end, give examples.
+                                       - If no formula exists, skip the formula line.
+
+                                    5. Keep it student-friendly.
                                         
-                                        Important Formatting Rule:
-                                        - Any heading or label followed by a colon (:) MUST be bold.
-                                        - Do NOT bold normal sentences.
-                                        
-                                        Difficulty Control:
-                                        - Use school-level terminology to explain.
-                                        - Break complex ideas into simple parts.
-                                        
-                                        General Explanation Rules:
-                                        - Use bullet points or numbered steps where helpful.
-                                        - Avoid unnecessary extra information.
-                                        - Use examples only if they genuinely help understanding.
-                                        
-                                        Definition Rule:
-                                        - If the question asks about a concept or term:
-                                          - First give a clear definition.
-                                          - Then explain it in simple language.
-                                        
-                                        OCR Safety Rule:
-                                        - If OCR text appears incomplete, incorrect, or unclear:
-                                          - Clearly mention possible OCR errors.
-                                          - Do not assume missing words or meanings.
-                                        
-                                        Diagram / Figure Rule:
-                                        - If the image contains a diagram, figure, or graph:
-                                          - Briefly describe what it shows.
-                                          - Explain important labels or values (A, B, x, y, etc.).
-                                          - Explain the concept using the diagram.
-                                        
-                                        Numerical Accuracy Rule:
-                                        - For math and science problems:
-                                          - Show all important steps.
-                                          - Do not skip calculations.
-                                          - Double-check results.
-                                          - Include correct units if applicable.
-                                        
-                                        Special Instructions for Scientific Laws:
-                                        - First list the name(s) of all relevant laws.
-                                        - Then explain each law separately under its name.
-                                        - Even if only one law is involved, clearly name it first.
-                                        
-                                        Special Instructions for Chemical Reactions:
-                                        - First write the balanced chemical equation.
-                                        - Clearly identify reactants and products.
-                                        - Explain the reaction step by step.
-                                        - Mention conditions (heat, catalyst, pressure) only if necessary.
-                                        
-                                        Special Instructions for Science Questions:
-                                        - First identify the topic and branch of science (Physics, Chemistry, Biology, or Environmental Science).
-                                        - Clearly define and explain concepts, laws, reactions, experiments, diagrams, or numerical problems using simple, school-level language, including formulas, balanced equations, steps, units, and labeled diagrams where applicable.
-                                        - Apply relevant scientific laws or principles step by step without assumptions and ensure accuracy.
-                                        - Always conclude with a clear final summary highlighting the key result or concept.
-                                        
-                                        
-                                        Special Instructions for Mathematics:
-                                        
-                                        1. If the question is about a theorem or mathematical concept:
-                                           - First clearly state the theorem or concept.
-                                           - Explain the proof or concept step by step.
-                                           - Use clear and standard mathematical notation.
-                                           - Clearly conclude when the explanation is complete.
-                                        
-                                        2. If the question is a mathematical problem:
-                                           - First restate what is given and what is required.
-                                           - Solve step by step, showing all key calculations.
-                                           - Clearly mark the final answer.
-                                           - Include units if applicable.
-                                           
-                                        Special Instructions for General Knowledge Questions:
-                                        - First clearly identify the topic or fact being asked.
-                                        - Give a direct and factual answer first.
-                                        - Then add supporting points if needed.
-                                        - Provide only well-known and widely accepted facts.
-                                        
-                                        Answer Structure (must follow strictly):
-                                        - Step-by-step explanation or bullet points.
-                                        - Final summary (1–2 lines).
-                                        
-                                        Do NOT:
-                                        - Mention these instructions.
-                                        - Add unnecessary information.
-                                        - Make assumptions when unsure.
-                                        
-                                        Question:
-                                        $finalQuestion
-                                        
-                                        Answer:
-                                        """.trimIndent()
+                                        $conversationContext
+                                        User: $finalQuestion
+                                        Assistant:
+                                    """.trimIndent()
 
                                 val fullAnswer = withContext(Dispatchers.Default) {
                                     llm.generateResponse(prompt)
                                 }
 
-                                val lines = fullAnswer.lines()
+                                val answer = fullAnswer.replace("\\n", "\n") // safety cleanup
 
                                 messages = messages.dropLast(1) +
                                         ChatMessage(
@@ -614,19 +543,18 @@ fun ChatScreen(
                                             isStreaming = true
                                         )
 
-                                for (line in lines) {
-                                    delay(120) // controls typing speed
+                                for (char in answer) {
+//                                    delay(125) // typing speed
 
                                     messages = messages.dropLast(1) +
                                             messages.last().copy(
-                                                text = messages.last().text + line + "\n"
+                                                text = messages.last().text + char
                                             )
                                 }
 
                                 messages = messages.dropLast(1) +
-                                        messages.last().copy(
-                                            isStreaming = false
-                                        )
+                                        messages.last().copy(isStreaming = false)
+
 
 
                                 val topic = detectDiagramTopic(finalQuestion + " " + fullAnswer)
@@ -715,5 +643,22 @@ private fun copyAssetToInternalStorage(
     }
     return file.absolutePath
 }
+
+
+private fun buildConversationContext(
+    messages: List<ChatMessage>,
+    maxTurns: Int = 2
+): String {
+    val history = messages
+        .filter { it.text != null && !it.isStreaming }
+        .takeLast(maxTurns * 2) // user + assistant pairs
+        .joinToString("\n") {
+            if (it.isUser) "User: ${it.text}"
+            else "Assistant: ${it.text}"
+        }
+
+    return if (history.isBlank()) "" else "$history\n\n"
+}
+
 
 
