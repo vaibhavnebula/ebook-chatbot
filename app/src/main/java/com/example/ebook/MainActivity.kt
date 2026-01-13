@@ -53,6 +53,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.time.delay
+import android.widget.TextView
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.toArgb
+
+import io.noties.markwon.Markwon
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.ext.tasklist.TaskListPlugin
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -269,66 +280,12 @@ fun ChatScreen(
                                     }
 
                                     msg.text?.let { text ->
-
-                                        val cleanedText = text
-                                            .replace(Regex("""\*\*(.*?)\*\*"""), "$1")  // bold
-                                            .replace(Regex("""__(.*?)__"""), "$1")      // bold
-                                            .replace(Regex("""\*(.*?)\*"""), "$1")      // italics
-                                            .replace(Regex("""_(.*?)_"""), "$1")        // italics
-                                            .replace(Regex("""`(.*?)`"""), "$1")        // code
-                                            .trim()
-
-                                        Column(modifier = Modifier.padding(top = 4.dp)) {
-                                            val lines = cleanedText.lines()
-                                            for (line in lines) {
-                                                val trimmed = line.trimStart()
-                                                when {
-                                                    // Handle bullets starting with - or •
-                                                    trimmed.startsWith("-") || trimmed.startsWith("•") -> {
-                                                        Row(modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) {
-                                                            Text(
-                                                                text = "• ",
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = if (msg.isUser)
-                                                                    MaterialTheme.colorScheme.onPrimary
-                                                                else
-                                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                            Text(
-                                                                text = trimmed.drop(1).trim(),
-                                                                color = if (msg.isUser)
-                                                                    MaterialTheme.colorScheme.onPrimary
-                                                                else
-                                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                        }
-                                                    }
-
-                                                    // If the line is short, treat it as a heading
-                                                    !msg.isUser && !msg.isThinking && trimmed.length < 50 -> {
-                                                        Text(
-                                                            text = trimmed,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier.padding(bottom = 4.dp)
-                                                        )
-                                                    }
-
-                                                    // Default paragraph
-                                                    else -> {
-                                                        Text(
-                                                            text = trimmed,
-                                                            color = if (msg.isUser)
-                                                                MaterialTheme.colorScheme.onPrimary
-                                                            else
-                                                                MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier.padding(bottom = 4.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        MarkdownText(
+                                            markdown = text,
+                                            isUser = msg.isUser
+                                        )
                                     }
+
 
                                     msg.diagramImages.forEach { path ->
                                         AsyncImage(
@@ -660,5 +617,36 @@ private fun buildConversationContext(
     return if (history.isBlank()) "" else "$history\n\n"
 }
 
+@Composable
+fun MarkdownText(
+    markdown: String,
+    isUser: Boolean
+) {
+    val context = LocalContext.current
 
+    val textColor = if (isUser) {
+        MaterialTheme.colorScheme.onPrimary.toArgb()
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = { ctx ->
+            TextView(ctx).apply {
+                textSize = 15f
+                setTextColor(textColor)
+            }
+        },
+        update = { textView ->
+            val markwon = Markwon.builder(context)
+                .usePlugin(HtmlPlugin.create())
+                .usePlugin(TaskListPlugin.create(context))
+                .usePlugin(StrikethroughPlugin.create())
+                .build()
+
+            markwon.setMarkdown(textView, markdown)
+        }
+    )
+}
 
