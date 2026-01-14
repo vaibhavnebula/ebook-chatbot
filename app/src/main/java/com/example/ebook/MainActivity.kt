@@ -63,6 +63,8 @@ import io.noties.markwon.Markwon
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.latex.JLatexMathPlugin
+
 
 
 
@@ -479,6 +481,20 @@ fun ChatScreen(
                                        - Then explain the concept step by step in simple points.
                                        - At the end, give examples.
                                        - If no formula exists, skip the formula line.
+                                    
+                                    5. FOR NUMERICAL / PROBLEM-SOLVING QUESTIONS (Physics, Math):
+                                       - Start with **Given** (clearly list all given data).
+                                       - Then write **To Find / Required**.
+                                       - Write the **relevant formula(s)** **in LaTeX format, wrapped in \$...\$**.
+                                       - Substitute values **step by step** **using \$...\$ for all math**.
+                                       - Perform calculations **line by line like a textbook**, with **all math in \$...\$**.
+                                       - Write the **final answer clearly**, including **units if applicable**, also in \$...\$.
+                                
+                                    6. **ALL mathematical expressions, numbers, variables, powers, fractions, symbols MUST be written in LaTeX syntax inside \$...\$**.
+                                       - Example: Instead of "x^2 + y^2 = r^2", write: ${'$'}{'$'}x^2 + y^2 = r^2$
+                                       - Example: Instead of "(-7)^2", write: ${'$'}{'$'}(-7)^2$
+                                       - Use \cdot for multiplication, \div for division, \sqrt{}, \frac{a}{b}, etc.
+                                       - Use proper LaTeX: ${'$'}{'$'}E = mc^2$, ${'$'}{'$'}\\alpha + \\beta = \\gamma$
 
                                     5. Keep it student-friendly.
                                         
@@ -643,10 +659,13 @@ fun MarkdownText(
                 .usePlugin(HtmlPlugin.create())
                 .usePlugin(TaskListPlugin.create(context))
                 .usePlugin(StrikethroughPlugin.create())
+                .usePlugin(JLatexMathPlugin.create(16f))
                 .build()
 
             markwon.setMarkdown(textView, markdown)
         }
     )
 }
+
+
 
