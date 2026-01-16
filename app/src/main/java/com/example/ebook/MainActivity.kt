@@ -28,6 +28,7 @@ import androidx.room.Room
 import java.util.UUID
 import androidx.compose.material.icons.filled.Menu
 import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -54,18 +55,18 @@ import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.time.delay
 import android.widget.TextView
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.toArgb
-
 import io.noties.markwon.Markwon
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
-
-
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.window.Dialog
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -100,7 +101,6 @@ class MainActivity : ComponentActivity() {
 
         llm = LlmInference.createFromOptions(this, llmOptions)
 
-
         /* -------- SET UI -------- */
         setContent {
             EbookTheme {
@@ -124,7 +124,6 @@ data class ChatMessage(
     val isStreaming: Boolean = false
 )
 
-
 /* -------------------- UI -------------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -144,11 +143,13 @@ fun ChatScreen(
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var sessionCreated by remember { mutableStateOf(false) }
+    var previewImageUri by remember { mutableStateOf<Uri?>(null) }
 
-    // 👇 ADDED: LazyListState for auto-scroll
+
+    //  LazyListState for auto-scroll
     val listState = rememberLazyListState()
 
-    // 👇 ADDED: Auto-scroll to latest message when messages change
+    //  Auto-scroll to latest message when messages change
     LaunchedEffect(messages) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
@@ -278,14 +279,29 @@ fun ChatScreen(
                                             modifier = Modifier
                                                 .size(180.dp)
                                                 .padding(bottom = 4.dp)
+                                                .clickable(
+                                                    onClick = {
+                                                        previewImageUri = uri
+                                                    }
+
+                                                )
                                         )
                                     }
 
                                     msg.text?.let { text ->
-                                        MarkdownText(
-                                            markdown = text,
-                                            isUser = msg.isUser
-                                        )
+                                        if (msg.isUser) {
+                                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                                Text(
+                                                    text = text,
+                                                    color = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            }
+                                        } else {
+                                            MarkdownMath(
+                                                markdown = text,
+                                                isUser = false
+                                            )
+                                        }
                                     }
 
 
@@ -305,11 +321,12 @@ fun ChatScreen(
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                 }
-                // 👇 ADDED: small bottom padding so last message isn't clipped
+                //  small bottom padding so last message isn't clipped
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+
 
             /* -------------------- SELECTED IMAGE PREVIEW -------------------- */
 
@@ -349,8 +366,6 @@ fun ChatScreen(
                 }
             }
 
-
-
             /* -------------------- INPUT ROW -------------------- */
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -370,7 +385,7 @@ fun ChatScreen(
                         .weight(1f)
                         .padding(start = 4.dp),
                     placeholder = { Text("Ask a question") },
-                    singleLine = true,
+                    singleLine = false,
                     shape = RoundedCornerShape(24.dp),
                     leadingIcon = {
                         IconButton(
@@ -383,7 +398,6 @@ fun ChatScreen(
                         }
                     }
                 )
-
 
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -461,43 +475,60 @@ fun ChatScreen(
                                     buildConversationContext(messages)
 
                                 val prompt = """
-                                    stay relevant to the topic explain it as per user requested.
-                                    
-                                    STRICT ANSWER RULES (follow in order):
-                                    1. If the user asks for a FACTUAL VALUE (formula, name, CEO, year, symbol):
-                                       - FIRST line must contain ONLY the direct answer.
-                                       
-                                    2. If the user asks "who", "formula of", "name of":
-                                       - Do NOT start with explanation.
-                                       - Give the answer immediately In Bold.
-                                       
-                                    3. FOR DEFINITIONS:
-                                       - Start directly with the definition.
-                                       - If the term has a UNIT, give the unit on the NEXT line.
+                                    stay relevant to the topic and explain it as per user request.
 
-                                    4. If the user asks for explanation, derivation, example, or working:
-                                       - Start with a ONE-SENTENCE definition.
-                                       - On the NEXT line, give the formula (only if a formula exists).
-                                       - Then explain the concept step by step in simple points.
-                                       - At the end, give examples.
-                                       - If no formula exists, skip the formula line.
-                                    
-                                    5. FOR NUMERICAL / PROBLEM-SOLVING QUESTIONS (Physics, Math):
-                                       - Start with **Given** (clearly list all given data).
-                                       - Then write **To Find / Required**.
-                                       - Write the **relevant formula(s)** **in LaTeX format, wrapped in \$...\$**.
-                                       - Substitute values **step by step** **using \$...\$ for all math**.
-                                       - Perform calculations **line by line like a textbook**, with **all math in \$...\$**.
-                                       - Write the **final answer clearly**, including **units if applicable**, also in \$...\$.
-                                
-                                    6. **ALL mathematical expressions, numbers, variables, powers, fractions, symbols MUST be written in LaTeX syntax inside \$...\$**.
-                                       - Example: Instead of "x^2 + y^2 = r^2", write: ${'$'}{'$'}x^2 + y^2 = r^2$
-                                       - Example: Instead of "(-7)^2", write: ${'$'}{'$'}(-7)^2$
-                                       - Use \cdot for multiplication, \div for division, \sqrt{}, \frac{a}{b}, etc.
-                                       - Use proper LaTeX: ${'$'}{'$'}E = mc^2$, ${'$'}{'$'}\\alpha + \\beta = \\gamma$
-
-                                    5. Keep it student-friendly.
+                                        STRICT ANSWER RULES (follow in order):
                                         
+                                        1. If the user asks for a FACTUAL VALUE (formula, name, year, symbol):
+                                           - FIRST line must contain ONLY the direct answer.
+                                        
+                                        2. If the user asks "who", "formula of", or "name of":
+                                           - Give the answer immediately in **Bold**.
+                                           - Do NOT start with explanation.
+                                        
+                                        3. FOR DEFINITIONS:
+                                           - Start directly with the definition.
+                                           - If the term has a UNIT, give the unit on the NEXT line.
+                                        
+                                        4. FOR explanations / derivations / working:
+                                           - Start with a ONE-SENTENCE definition.
+                                           - On the NEXT line, write the formula IF it exists.
+                                           - Then explain step-by-step in simple points.
+                                           - End with examples.
+                                        
+                                        5. FOR numerical / problem-solving questions:
+                                           - Start with **Given**.
+                                           - Then **To Find**.
+                                           - Show **all formulas**, substitutions, and calculations step-by-step.
+                                           - Show the **final answer with units**.
+                                           - NEVER use inline math like ${'$'}x = 1$.
+                                            - ALWAYS use display math with $$...$$ for ANY mathematical expression.
+                                            NEVER write: "The force is $${'$'}F=ma$$."  
+                                            ALWAYS write:
+
+                                            The force is
+
+                                            $$
+                                            F = ma
+                                            $$
+
+                                            If you put ANY text on the same line as $$, the student cannot see the formula.
+                                        
+                                        FINAL LATEX OUTPUT RULE (CRITICAL):
+                                        
+                                        Whenever you write ANY mathematical expression, you MUST output it
+                                        using this EXACT multi-line format:
+                                        
+                                        $$
+                                        <latex-expression>
+                                        $$
+                                        
+                                        The $$ symbols MUST be on their own lines.
+                                        Do NOT place any characters before or after $$.
+                                        Do NOT write formulas inline.
+                                                                                
+                                        Keep the explanation student-friendly.
+                                       
                                         $conversationContext
                                         User: $finalQuestion
                                         Assistant:
@@ -506,28 +537,14 @@ fun ChatScreen(
                                 val fullAnswer = withContext(Dispatchers.Default) {
                                     llm.generateResponse(prompt)
                                 }
+                                Log.d("LLM_RAW_OUTPUT", "=== RAW ===\n$fullAnswer\n=== END ===")
 
-                                val answer = fullAnswer.replace("\\n", "\n") // safety cleanup
 
-                                messages = messages.dropLast(1) +
-                                        ChatMessage(
-                                            text = "",
-                                            isUser = false,
-                                            isStreaming = true
-                                        )
-
-                                for (char in answer) {
-//                                    delay(125) // typing speed
-
-                                    messages = messages.dropLast(1) +
-                                            messages.last().copy(
-                                                text = messages.last().text + char
-                                            )
-                                }
-
-                                messages = messages.dropLast(1) +
-                                        messages.last().copy(isStreaming = false)
-
+                                val answer = normalizeLatex(
+                                    fullAnswer.replace("\\n", "\n")
+                                )
+                                val normalizedAnswer = normalizeLatex(fullAnswer.replace("\\n", "\n"))
+                                Log.d("NORMALIZED_OUTPUT", "=== FINAL ===\n$normalizedAnswer\n=== END ===")
 
 
                                 val topic = detectDiagramTopic(finalQuestion + " " + fullAnswer)
@@ -537,7 +554,7 @@ fun ChatScreen(
                                 chatDao.insertMessage(
                                     ChatMessageEntity(
                                         sessionId = currentSessionId,
-                                        text = fullAnswer,
+                                        text = answer,
                                         isUser = false,
                                         timestamp = System.currentTimeMillis(),
                                         diagramImages = diagramImages.joinToString(",")
@@ -546,7 +563,7 @@ fun ChatScreen(
 
                                 messages = messages.dropLast(1) +
                                         ChatMessage(
-                                            text = fullAnswer,
+                                            text = answer,
                                             isUser = false,
                                             diagramImages = diagramImages
                                         )
@@ -564,6 +581,41 @@ fun ChatScreen(
                 }
 
             }
+            if (previewImageUri != null) {
+                Dialog(
+                    onDismissRequest = { previewImageUri = null }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    ) {
+
+                        AsyncImage(
+                            model = previewImageUri,
+                            contentDescription = "Image preview",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .align(Alignment.Center)
+                        )
+
+                        IconButton(
+                            onClick = { previewImageUri = null },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                                .size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close preview",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                }
+            }
+
         }
     }
 }
@@ -599,8 +651,6 @@ fun BlinkingCursor() {
     )
 }
 
-
-
 /* -------------------- FILE COPY (LLM ONLY) -------------------- */
 private fun copyAssetToInternalStorage(
     context: android.content.Context,
@@ -633,39 +683,58 @@ private fun buildConversationContext(
     return if (history.isBlank()) "" else "$history\n\n"
 }
 
+
 @Composable
-fun MarkdownText(
+fun MarkdownMath(
     markdown: String,
     isUser: Boolean
 ) {
     val context = LocalContext.current
-
-    val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimary.toArgb()
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
-    }
+    val textColor = if (isUser)
+        MaterialTheme.colorScheme.onPrimary
+    else
+        MaterialTheme.colorScheme.onSurfaceVariant
 
     AndroidView(
         modifier = Modifier.fillMaxWidth(),
         factory = { ctx ->
             TextView(ctx).apply {
-                textSize = 15f
-                setTextColor(textColor)
+                setTextColor(textColor.toArgb())
+                textSize = 20f
+                setTextIsSelectable(true)
             }
         },
         update = { textView ->
             val markwon = Markwon.builder(context)
                 .usePlugin(HtmlPlugin.create())
-                .usePlugin(TaskListPlugin.create(context))
                 .usePlugin(StrikethroughPlugin.create())
-                .usePlugin(JLatexMathPlugin.create(16f))
+                .usePlugin(TaskListPlugin.create(context))
+                .usePlugin(JLatexMathPlugin.create(
+                    40f,46f
+                ))
                 .build()
+
 
             markwon.setMarkdown(textView, markdown)
         }
     )
 }
 
-
-
+private fun normalizeLatex(text: String): String {
+    return text
+        .replace(
+            Regex("""\\\[\s*(.*?)\s*\\\]""", setOf(RegexOption.DOT_MATCHES_ALL))
+        ) { match ->
+            val content = match.groups[1]?.value?.trim() ?: ""
+            if (content.isEmpty()) "" else "\n\n$$\n$content\n$$\n\n"
+        }
+        .replace(
+            Regex("""\\\(\s*(.*?)\s*\\\)""", setOf(RegexOption.DOT_MATCHES_ALL))
+        ) { match ->
+            val content = match.groups[1]?.value?.trim() ?: ""
+            if (content.isEmpty()) "" else "\n\n$$\n$content\n$$\n\n"
+        }
+        .replace("""\\cdot""", """\\times""")
+        .replace(Regex("""\n{3,}"""), "\n\n")
+        .trim()
+}

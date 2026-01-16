@@ -75,5 +75,7 @@ dependencies {
     implementation("ru.noties:jlatexmath-android:0.2.0")
     implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
     implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
+    implementation("io.noties.markwon:inline-parser:4.6.2")
+
 
 }
