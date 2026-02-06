@@ -19,32 +19,41 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.shadow
+
 
 @Composable
-fun HistoryScreen(
+fun HistoryContent(
     chatDao: ChatDao,
-    onSessionSelected: (String) -> Unit
+    onSessionSelected: (String) -> Unit,
+    onSessionDeleted: (String) -> Unit
 ) {
-    var sessions by remember {
-        mutableStateOf<List<ChatSessionEntity>>(emptyList())
-    }
-
+    var sessions by remember { mutableStateOf<List<ChatSessionEntity>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
-    /* -------- LOAD CHAT HISTORY -------- */
+    // Track which session's menu is open (by sessionId)
+    var expandedSessionId by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Unit) {
         sessions = chatDao.getAllSessions()
     }
 
-    /* -------- UI -------- */
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .safeContentPadding() //  Only change: prevents content from going under system bars
+            .safeContentPadding()
     ) {
         items(
             items = sessions,
-            key = { it.sessionId }     //  important for stable UI updates
+            key = { it.sessionId }
         ) { session ->
 
             ListItem(
@@ -61,23 +70,71 @@ fun HistoryScreen(
                     )
                 },
                 trailingContent = {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                //  DELETE SESSION + ALL MESSAGES
-                                chatDao.deleteSessionWithMessages(session.sessionId)
-                                sessions = chatDao.getAllSessions()
+                    // 3-DOT OVERFLOW MENU
+                    Box {
+                        IconButton(
+                            onClick = {
+                                // Toggle menu for this session
+                                expandedSessionId = if (expandedSessionId == session.sessionId)
+                                    null
+                                else
+                                    session.sessionId
                             }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Session options",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Delete session"
-                        )
+
+                        // DROPDOWN MENU
+                        DropdownMenu(
+                            expanded = expandedSessionId == session.sessionId,
+                            onDismissRequest = { expandedSessionId = null },
+                            modifier = Modifier
+                                .width(180.dp)
+                                .shadow(4.dp)  // Subtle shadow for depth
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Delete session",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    scope.launch {
+                                        // DELETE SESSION + ALL MESSAGES
+                                        chatDao.deleteSessionWithMessages(session.sessionId)
+                                        sessions = chatDao.getAllSessions()
+                                        expandedSessionId = null  // Close menu after delete
+
+                                        onSessionDeleted(session.sessionId)
+                                    }
+                                }
+                            )
+
+                            // Optional: Add more actions later
+                            // DropdownMenuItem(
+                            //     text = { Text("Rename") },
+                            //     leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            //     onClick = { /* ... */ }
+                            // )
+                        }
                     }
                 },
                 modifier = Modifier.clickable {
                     onSessionSelected(session.sessionId)
+                    expandedSessionId = null  // Close any open menu when selecting session
                 }
             )
 

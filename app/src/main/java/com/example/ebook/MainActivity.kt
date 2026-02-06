@@ -67,6 +67,25 @@ import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.window.Dialog
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.graphics.Color as AndroidColor
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import android.widget.Toast
+import androidx.compose.material.icons.filled.QuestionAnswer
+import androidx.compose.ui.text.style.TextAlign
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,6 +138,7 @@ data class ChatMessage(
     val text: String? = null,
     val imageUri: Uri? = null,
     val diagramImages: List<String> = emptyList(),
+    val mermaidCodeBlocks: List<String> = emptyList(),
     val isUser: Boolean,
     val isThinking: Boolean = false,
     val isStreaming: Boolean = false
@@ -144,6 +164,25 @@ fun ChatScreen(
     var showHistory by remember { mutableStateOf(false) }
     var sessionCreated by remember { mutableStateOf(false) }
     var previewImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedMermaidCode by remember { mutableStateOf<String?>(null) }
+
+    val handleSessionDeleted: (String) -> Unit = { deletedSessionId ->
+        if (deletedSessionId == currentSessionId) {
+            // Clear UI + reset state for CURRENT session deletion
+            messages = emptyList()
+            currentSessionId = UUID.randomUUID().toString() // New blank session
+            sessionCreated = false
+            // Optional: Show brief feedback
+            scope.launch {
+                Toast.makeText(
+                    context,
+                    "Session deleted",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
 
 
     //  LazyListState for auto-scroll
@@ -166,10 +205,14 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Science Book Chatbot",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold
-                    )) },
+                title = {
+                    Text(
+                        "Science Book Chatbot",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { showHistory = !showHistory }) {
                         Icon(Icons.Default.Menu, contentDescription = "History")
@@ -189,292 +232,327 @@ fun ChatScreen(
         }
     ) { padding ->
 
-        if (showHistory) {
-            HistoryScreen(
-                chatDao = chatDao,
-                onSessionSelected = { sessionId ->
-                    scope.launch {
-                        val oldMessages = chatDao.getMessages(sessionId)
-
-                        messages = oldMessages.map {
-                            ChatMessage(
-                                text = it.text,
-                                isUser = it.isUser,
-                                imageUri = it.imageUri?.let(Uri::parse),
-                                diagramImages = it.diagramImages
-                                    ?.split(",")
-                                    ?.filter { name -> name.isNotBlank() }
-                                    ?: emptyList()
-                            )
-                        }
-
-                        currentSessionId = sessionId
-                        sessionCreated = true
-                        showHistory = false
-                    }
-                }
-            )
-            return@Scaffold
-        }
-
-        Column(
+        // ROOT LAYOUT: Box allows layering chat UI + drawer on top
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-
-//                .padding(16.dp)
         ) {
-
-            /* -------------------- CHAT LIST -------------------- */
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 8.dp),
-                state = listState
-            )
-            {
-
-            items(messages) { msg ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement =
-                            if (msg.isUser) Arrangement.End else Arrangement.Start
-                    ) {
-                        val isCursorOnly =
-                            !msg.isUser && msg.isStreaming && msg.text.isNullOrEmpty()
-
-                        if (isCursorOnly) {
-                            //  Cursor WITHOUT background
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                BlinkingCursor()
-                            }
-                        } else {
-                            //  Normal chat bubble
-                            Surface(
-                                shape = MaterialTheme.shapes.large,
-                                tonalElevation = 2.dp,
-                                color =
-                                    if (msg.isUser)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.widthIn(max = 300.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(
-                                        horizontal = 14.dp,
-                                        vertical = 8.dp
-                                    )
-                                ) {
-
-                                    msg.imageUri?.let { uri ->
-                                        AsyncImage(
-                                            model = uri,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(180.dp)
-                                                .padding(bottom = 4.dp)
-                                                .clickable(
-                                                    onClick = {
-                                                        previewImageUri = uri
-                                                    }
-
-                                                )
-                                        )
-                                    }
-
-                                    msg.text?.let { text ->
-                                        if (msg.isUser) {
-                                            androidx.compose.foundation.text.selection.SelectionContainer {
-                                                Text(
-                                                    text = text,
-                                                    color = MaterialTheme.colorScheme.onPrimary
-                                                )
-                                            }
-                                        } else {
-                                            MarkdownMath(
-                                                markdown = text,
-                                                isUser = false
-                                            )
-                                        }
-                                    }
-
-
-                                    msg.diagramImages.forEach { path ->
-                                        AsyncImage(
-                                            model = "file:///android_asset/diagrams/$path",
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 10.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-                //  small bottom padding so last message isn't clipped
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-
-
-            /* -------------------- SELECTED IMAGE PREVIEW -------------------- */
-
-            if (selectedImageUri != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Box {
-                        AsyncImage(
-                            model = selectedImageUri,
-                            contentDescription = "Selected image",
-                            modifier = Modifier.size(96.dp)
-                        )
-
-                        IconButton(
-                            onClick = { selectedImageUri = null },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = 3.dp, y = (-6).dp)
-                                .size(28.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surface,
-                                tonalElevation = 4.dp
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove image",
-                                    modifier = Modifier.padding(4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            /* -------------------- INPUT ROW -------------------- */
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 2.dp,top = 0.dp)
-
-
+            // ===== MAIN CHAT UI (always visible underneath) =====
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-
-                OutlinedTextField(
-                    value = userInput,
-                    onValueChange = { userInput = it },
+                /* -------------------- CHAT LIST -------------------- */
+                /* -------------------- CHAT LIST -------------------- */
+                LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 4.dp),
-                    placeholder = { Text("Ask a question") },
-                    singleLine = false,
-                    shape = RoundedCornerShape(24.dp),
-                    leadingIcon = {
-                        IconButton(
-                            onClick = { imagePickerLauncher.launch("image/*") }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Attach file"
-                            )
+                        .padding(vertical = 8.dp),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 24.dp) // Prevent last message from being hidden by input field
+                ) {
+                    // SHOW PLACEHOLDER WHEN CHAT IS EMPTY
+                    if (messages.isEmpty() && !isLoading) {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QuestionAnswer,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(64.dp)
+                                )
+                                Text(
+                                    text = "What can I help you?",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 16.dp)
+                                )
+
+                            }
+                        }
+                    } else {
+                        // NORMAL MESSAGE RENDERING
+                        items(messages) { msg ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
+                                horizontalArrangement =
+                                    if (msg.isUser) Arrangement.End else Arrangement.Start
+                            ) {
+                                val isCursorOnly =
+                                    !msg.isUser && msg.isStreaming && msg.text.isNullOrEmpty()
+
+                                if (isCursorOnly) {
+                                    // Cursor WITHOUT background
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    ) {
+                                        BlinkingCursor()
+                                    }
+                                } else {
+                                    // Normal chat bubble
+                                    Surface(
+                                        shape = MaterialTheme.shapes.large,
+                                        tonalElevation = 2.dp,
+                                        color =
+                                            if (msg.isUser)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.widthIn(max = 300.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(
+                                                horizontal = 14.dp,
+                                                vertical = 8.dp
+                                            )
+                                        ) {
+
+                                            msg.imageUri?.let { uri ->
+                                                AsyncImage(
+                                                    model = uri,
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .size(180.dp)
+                                                        .padding(bottom = 4.dp)
+                                                        .clickable(
+                                                            onClick = {
+                                                                previewImageUri = uri
+                                                            }
+                                                        )
+                                                )
+                                            }
+
+                                            msg.text?.let { text ->
+                                                if (msg.isUser) {
+                                                    androidx.compose.foundation.text.selection.SelectionContainer {
+                                                        Text(
+                                                            text = text,
+                                                            color = MaterialTheme.colorScheme.onPrimary
+                                                        )
+                                                    }
+                                                } else {
+                                                    MarkdownMath(
+                                                        markdown = text,
+                                                        isUser = false
+                                                    )
+                                                }
+                                            }
+
+                                            msg.diagramImages.forEach { path ->
+                                                AsyncImage(
+                                                    model = "file:///android_asset/diagrams/$path",
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(top = 10.dp)
+                                                )
+                                            }
+
+                                            msg.mermaidCodeBlocks.forEach { code ->
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 8.dp)
+                                                        .height(160.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    MermaidDiagram(
+                                                        code = code,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .fillMaxHeight()
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
+                        // Small bottom padding so last message isn't clipped
+                        item {
+                            Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
-                )
+                }
 
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Surface(
-                    shape = CircleShape,
-                    color = if (isLoading)
-                        MaterialTheme.colorScheme.surfaceVariant
-                    else
-                        MaterialTheme.colorScheme.primary,
-                    tonalElevation = 4.dp,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    IconButton(
-                        enabled = !isLoading,
-                        onClick = {
-                            keyboardController?.hide()
-
-                            if (userInput.isBlank() && selectedImageUri == null) return@IconButton
-
-                            val textToSend = userInput.takeIf { it.isNotBlank() }
-                            val imageToSend = selectedImageUri
-
-                            userInput = ""
-                            selectedImageUri = null
-                            isLoading = true
-
-                            messages = messages + ChatMessage(
-                                text = textToSend,
-                                imageUri = imageToSend,
-                                isUser = true
-                            ) + ChatMessage(
-                                text = "",
-                                isUser = false,
-                                isStreaming = true
+                /* -------------------- SELECTED IMAGE PREVIEW -------------------- */
+                if (selectedImageUri != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Box {
+                            AsyncImage(
+                                model = selectedImageUri,
+                                contentDescription = "Selected image",
+                                modifier = Modifier.size(96.dp)
                             )
 
+                            IconButton(
+                                onClick = { selectedImageUri = null },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 3.dp, y = (-6).dp)
+                                    .size(28.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 4.dp
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove image",
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
-                            scope.launch {
-                                /*  KEEP YOUR EXISTING LOGIC UNCHANGED */
-                                if (!sessionCreated && !textToSend.isNullOrBlank()) {
-                                    chatDao.insertSession(
-                                        ChatSessionEntity(
-                                            sessionId = currentSessionId,
-                                            title = textToSend.take(40),
-                                            createdAt = System.currentTimeMillis()
+                /* -------------------- INPUT ROW -------------------- */
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .imePadding()
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 2.dp, top = 0.dp)
+                ) {
+                    OutlinedTextField(
+                        value = userInput,
+                        onValueChange = { userInput = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 4.dp),
+                        placeholder = { Text("Ask a question") },
+                        singleLine = false,
+                        shape = RoundedCornerShape(24.dp),
+                        leadingIcon = {
+                            IconButton(
+                                onClick = { imagePickerLauncher.launch("image/*") }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddCircle,
+                                    contentDescription = "Attach file"
+                                )
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isLoading)
+                            MaterialTheme.colorScheme.surfaceVariant
+                        else
+                            MaterialTheme.colorScheme.primary,
+                        tonalElevation = 4.dp,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        IconButton(
+                            enabled = !isLoading,
+                            onClick = {
+                                keyboardController?.hide()
+
+                                if (userInput.isBlank() && selectedImageUri == null) return@IconButton
+
+                                val textToSend = userInput.takeIf { it.isNotBlank() }
+                                val imageToSend = selectedImageUri
+
+                                userInput = ""
+                                selectedImageUri = null
+                                isLoading = true
+
+                                // ✅ SPLIT IMAGE + TEXT INTO SEPARATE MESSAGES
+                                val newMessages = mutableListOf<ChatMessage>()
+
+// 1. Add image-only message (if image exists)
+                                if (imageToSend != null) {
+                                    newMessages.add(
+                                        ChatMessage(
+                                            imageUri = imageToSend,
+                                            isUser = true
                                         )
                                     )
-                                    sessionCreated = true
                                 }
 
+// 2. Add text-only message (if text exists)
+                                if (!textToSend.isNullOrBlank()) {
+                                    newMessages.add(
+                                        ChatMessage(
+                                            text = textToSend,
+                                            isUser = true
+                                        )
+                                    )
+                                }
 
-                                chatDao.insertMessage(
-                                    ChatMessageEntity(
-                                        sessionId = currentSessionId,
-                                        text = textToSend ?: "",
-                                        isUser = true,
-                                        timestamp = System.currentTimeMillis(),
-                                        imageUri = imageToSend?.toString()
+// 3. Add assistant's streaming bubble
+                                newMessages.add(
+                                    ChatMessage(
+                                        text = "",
+                                        isUser = false,
+                                        isStreaming = true
                                     )
                                 )
 
-                                val ocrText = imageToSend?.let {
-                                    try { extractTextFromImage(context, it) } catch (e: Exception) { "" }
-                                }
+// Update UI state
+                                messages = messages + newMessages
 
-                                val finalQuestion = buildString {
-                                    textToSend?.let { append(it) }
-                                    if (!ocrText.isNullOrBlank()) {
-                                        append("\n\nText found in image:\n")
-                                        append(ocrText)
+                                scope.launch {
+                                    /*  KEEP YOUR EXISTING LOGIC UNCHANGED */
+                                    if (!sessionCreated && !textToSend.isNullOrBlank()) {
+                                        chatDao.insertSession(
+                                            ChatSessionEntity(
+                                                sessionId = currentSessionId,
+                                                title = textToSend.take(40),
+                                                createdAt = System.currentTimeMillis()
+                                            )
+                                        )
+                                        sessionCreated = true
                                     }
-                                }
-                                val conversationContext =
-                                    buildConversationContext(messages)
 
-                                val prompt = """
+                                    chatDao.insertMessage(
+                                        ChatMessageEntity(
+                                            sessionId = currentSessionId,
+                                            text = textToSend ?: "",
+                                            isUser = true,
+                                            timestamp = System.currentTimeMillis(),
+                                            imageUri = imageToSend?.toString()
+                                        )
+                                    )
+
+                                    val ocrText = imageToSend?.let {
+                                        try { extractTextFromImage(context, it) } catch (e: Exception) { "" }
+                                    }
+
+                                    val finalQuestion = buildString {
+                                        textToSend?.let { append(it) }
+                                        if (!ocrText.isNullOrBlank()) {
+                                            append("\n\nText found in image:\n")
+                                            append(ocrText)
+                                        }
+                                    }
+                                    val conversationContext =
+                                        buildConversationContext(messages)
+
+                                    val prompt = """
                                     stay relevant to the topic and explain it as per user request.
 
                                         STRICT ANSWER RULES (follow in order):
@@ -528,94 +606,162 @@ fun ChatScreen(
                                         Do NOT write formulas inline.
                                                                                 
                                         Keep the explanation student-friendly.
+                                        
+                                        6. DIAGRAM GENERATION RULES (CRITICAL):
+                                           - GENERATE MERMAID WHEN: user requests visuals, explains processes, shows distributions, relationships, timelines, or structures.
+                                           - SELECT TYPE BY CONTEXT:
+                                             • PIE CHART → "percent", "distribution", "parts of whole", "market share"  
+                                               Syntax: `pie title [Name]\n    "[Label]" : [number]`
+                                             • FLOWCHART → workflows, decisions, steps (`flowchart LR/TB`)
+                                             • SEQUENCE → interactions over time (`sequenceDiagram`)
+                                    …    ```
+                                        
+                                        ```mermaid
+                                        flowchart TD
+                                            A[User Query] --> B{Has Image?}
+                                            B -->|Yes| C[Run OCR]
+                                            B -->|No| D[Process Text]
+                                            C --> E[Generate Answer]
+                                            D --> E
+                                        ```
+                                        7. - Use English by default; switch language only if asked. If input is only a greeting, reply with a greeting only.
+
                                        
                                         $conversationContext
                                         User: $finalQuestion
                                         Assistant:
                                     """.trimIndent()
 
-                                val fullAnswer = withContext(Dispatchers.Default) {
-                                    llm.generateResponse(prompt)
-                                }
-                                Log.d("LLM_RAW_OUTPUT", "=== RAW ===\n$fullAnswer\n=== END ===")
+                                    val fullAnswer = withContext(Dispatchers.Default) {
+                                        llm.generateResponse(prompt)
+                                    }
+                                    Log.d("LLM_RAW_OUTPUT", "=== RAW ===\n$fullAnswer\n=== END ===")
 
+                                    // 1. Convert escaped \n to real newlines FIRST
+                                    val unescapedResponse = fullAnswer.replace("\\n", "\n")
 
-                                val answer = normalizeLatex(
-                                    fullAnswer.replace("\\n", "\n")
-                                )
-                                val normalizedAnswer = normalizeLatex(fullAnswer.replace("\\n", "\n"))
-                                Log.d("NORMALIZED_OUTPUT", "=== FINAL ===\n$normalizedAnswer\n=== END ===")
+                                    // 2. NOW extract Mermaid blocks (they now have real newlines)
+                                    val mermaidBlocks = extractMermaidCodeBlocks(unescapedResponse)
+                                    val finalMermaidBlocks = mermaidBlocks
 
+                                    // 3. Remove Mermaid blocks from the unescaped text
+                                    val withoutMermaid = removeMermaidBlocks(unescapedResponse)
 
-                                val topic = detectDiagramTopic(finalQuestion + " " + fullAnswer)
-                                val diagramImages =
-                                    topic?.let { getDiagramImages(context, it) } ?: emptyList()
+                                    // 4. Apply LaTeX normalization to the cleaned text
+                                    val finalText = normalizeLatex(withoutMermaid)
 
-                                chatDao.insertMessage(
-                                    ChatMessageEntity(
-                                        sessionId = currentSessionId,
-                                        text = answer,
-                                        isUser = false,
-                                        timestamp = System.currentTimeMillis(),
-                                        diagramImages = diagramImages.joinToString(",")
-                                    )
-                                )
+                                    Log.d("MERMAID_BLOCKS", "Extracted ${mermaidBlocks.size} diagram(s)")
+                                    mermaidBlocks.forEachIndexed { i, code ->
+                                        Log.d("MERMAID_BLOCKS", "Diagram $i:\n$code")
+                                    }
 
-                                messages = messages.dropLast(1) +
-                                        ChatMessage(
-                                            text = answer,
+                                    Log.d("CLEANED_MARKDOWN", "=== CLEAN ===\n$finalText\n=== END ===")
+                                    Log.d("MERMAID_BLOCKS", "Found ${mermaidBlocks.size} diagram(s): $mermaidBlocks")
+
+                                    val topic = detectDiagramTopic(finalQuestion + " " + fullAnswer)
+                                    val diagramImages =
+                                        topic?.let { getDiagramImages(context, it) } ?: emptyList()
+
+                                    chatDao.insertMessage(
+                                        ChatMessageEntity(
+                                            sessionId = currentSessionId,
+                                            text = finalText,
                                             isUser = false,
-                                            diagramImages = diagramImages
+                                            timestamp = System.currentTimeMillis(),
+                                            diagramImages = diagramImages.joinToString(","),
+                                            mermaidCodeBlocks = finalMermaidBlocks.joinToString(",") // ← store separately
                                         )
+                                    )
 
-                                isLoading = false
+                                    messages = messages.dropLast(1) +
+                                            ChatMessage(
+                                                text = finalText,
+                                                isUser = false,
+                                                diagramImages = diagramImages,
+                                                mermaidCodeBlocks = finalMermaidBlocks
+                                            )
+
+                                    isLoading = false
+                                }
                             }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Send,
-                            contentDescription = "Send",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                }
-
-            }
-            if (previewImageUri != null) {
-                Dialog(
-                    onDismissRequest = { previewImageUri = null }
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                    ) {
-
-                        AsyncImage(
-                            model = previewImageUri,
-                            contentDescription = "Image preview",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .align(Alignment.Center)
-                        )
-
-                        IconButton(
-                            onClick = { previewImageUri = null },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(16.dp)
-                                .size(40.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close preview",
-                                tint = MaterialTheme.colorScheme.onBackground
+                                imageVector = Icons.Outlined.Send,
+                                contentDescription = "Send",
+                                tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
                 }
             }
 
+            // ===== HISTORY DRAWER (layered on top when visible) =====
+            HistoryDrawer(
+                isVisible = showHistory,
+                onDismiss = { showHistory = false },
+                chatDao = chatDao,
+                onSessionSelected = { sessionId ->
+                    scope.launch {
+                        val oldMessages = chatDao.getMessages(sessionId)
+
+                        messages = oldMessages.map {
+                            ChatMessage(
+                                text = it.text,
+                                isUser = it.isUser,
+                                imageUri = it.imageUri?.let(Uri::parse),
+                                diagramImages = it.diagramImages
+                                    ?.split(",")
+                                    ?.filter { name -> name.isNotBlank() }
+                                    ?: emptyList(),
+                                mermaidCodeBlocks = it.mermaidCodeBlocks
+                                    ?.split(",")
+                                    ?.map { code -> code.trim() }
+                                    ?.filter { code -> code.isNotBlank() }
+                                    ?: emptyList()
+                            )
+                        }
+
+                        currentSessionId = sessionId
+                        sessionCreated = true
+                    }
+                },
+                onSessionDeleted = handleSessionDeleted
+            )
+        }
+
+        // ===== IMAGE PREVIEW DIALOG (outside Box to avoid clipping) =====
+        if (previewImageUri != null) {
+            Dialog(
+                onDismissRequest = { previewImageUri = null }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    AsyncImage(
+                        model = previewImageUri,
+                        contentDescription = "Image preview",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .align(Alignment.Center)
+                    )
+
+                    IconButton(
+                        onClick = { previewImageUri = null },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close preview",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -667,7 +813,6 @@ private fun copyAssetToInternalStorage(
     return file.absolutePath
 }
 
-
 private fun buildConversationContext(
     messages: List<ChatMessage>,
     maxTurns: Int = 2
@@ -682,7 +827,6 @@ private fun buildConversationContext(
 
     return if (history.isBlank()) "" else "$history\n\n"
 }
-
 
 @Composable
 fun MarkdownMath(
@@ -737,4 +881,141 @@ private fun normalizeLatex(text: String): String {
         .replace("""\\cdot""", """\\times""")
         .replace(Regex("""\n{3,}"""), "\n\n")
         .trim()
+}
+
+private fun extractMermaidCodeBlocks(markdown: String): List<String> {
+    val mermaidPattern = Regex("```mermaid\\s*([\\s\\S]*?)\\s*```", RegexOption.MULTILINE)
+    return mermaidPattern.findAll(markdown)
+        .map { it.groupValues[1].trim() }
+        .filter { it.isNotEmpty() }
+        .toList()
+}
+
+@Composable
+fun MermaidDiagram(
+    code: String,
+    modifier: Modifier = Modifier
+) {
+    key(code) {
+        AndroidView(
+            modifier = modifier,
+            factory = { context ->
+                WebView(context).apply {
+                    settings.javaScriptEnabled = true
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false   // hide + / - buttons
+                    settings.setSupportZoom(true)
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    setBackgroundColor(AndroidColor.TRANSPARENT)
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(
+                            view: WebView?,
+                            url: String?
+                        ) {
+                            val safeCode = code
+                                .replace("\\", "\\\\")
+                                .replace("\"", "\\\"")
+                                .replace("\n", "\\n")
+
+                            view?.evaluateJavascript(
+                                """
+                                if (window.render) {
+                                    window.render("$safeCode");
+                                }
+                                """.trimIndent(),
+                                null
+                            )
+                        }
+                    }
+
+                    loadUrl("file:///android_asset/mermaid-render.html")
+                }
+            }
+        )
+    }
+}
+
+
+private fun removeMermaidBlocks(markdown: String): String {
+    return markdown.replace(Regex("```mermaid[\\s\\S]*?```"), "")
+}
+
+@Composable
+fun HistoryDrawer(
+    isVisible: Boolean,
+    onDismiss: () -> Unit,
+    chatDao: ChatDao,
+    onSessionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onSessionDeleted: (String) -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val drawerWidth: Dp = (configuration.screenWidthDp * 0.8f).dp
+
+    // Backdrop scrim (semi-transparent overlay)
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable { onDismiss() }
+        )
+    }
+
+    // Drawer sliding in from left
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = slideInHorizontally { -it } + fadeIn(),
+        exit = slideOutHorizontally { -it } + fadeOut()
+    ) {
+        Surface(
+            modifier = modifier
+                .width(drawerWidth)
+                .fillMaxHeight(),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header with close button
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Chat History",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+//                    IconButton(onClick = onDismiss) {
+//                        Icon(
+//                            imageVector = Icons.Default.Close,
+//                            contentDescription = "Close history",
+//                            tint = MaterialTheme.colorScheme.onSurface
+//                        )
+//                    }
+                }
+
+                Divider()
+
+                // Your history content
+                HistoryContent(
+                    chatDao = chatDao,
+                    onSessionSelected = { sessionId ->
+                        onSessionSelected(sessionId)
+                        onDismiss()
+                    },
+                    onSessionDeleted = onSessionDeleted
+                )
+            }
+        }
+    }
 }

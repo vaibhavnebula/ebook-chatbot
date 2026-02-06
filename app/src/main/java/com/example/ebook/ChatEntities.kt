@@ -2,6 +2,7 @@ package com.example.ebook
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity
 data class ChatSessionEntity(
@@ -18,5 +19,7 @@ data class ChatMessageEntity(
     val isUser: Boolean,
     val timestamp: Long,
     val imageUri: String? = null,
-    val diagramImages: String? = null
+    val diagramImages: String? = null,
+    @ColumnInfo(name = "mermaid_code_blocks")
+    val mermaidCodeBlocks: String? = null
 )
