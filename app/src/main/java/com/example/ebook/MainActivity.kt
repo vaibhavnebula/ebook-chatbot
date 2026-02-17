@@ -157,7 +157,8 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     var userInput by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+//    var isLoading by remember { mutableStateOf(false) }
+    var loadingSessions by remember { mutableStateOf<Set<String>>(emptySet()) }
     var currentSessionId by remember { mutableStateOf(UUID.randomUUID().toString()) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -165,8 +166,21 @@ fun ChatScreen(
     var sessionCreated by remember { mutableStateOf(false) }
     var previewImageUri by remember { mutableStateOf<Uri?>(null) }
     var selectedMermaidCode by remember { mutableStateOf<String?>(null) }
+    val selectionManager = remember { TextSelectionManager() }
+
+    // Clear selection when drawer opens
+    LaunchedEffect(Unit) {
+        snapshotFlow { showHistory }.collect { isOpening ->
+            if (isOpening) {
+                selectionManager.clearSelection()
+            }
+        }
+    }
+
 
     val handleSessionDeleted: (String) -> Unit = { deletedSessionId ->
+
+        loadingSessions = loadingSessions - deletedSessionId
         if (deletedSessionId == currentSessionId) {
             // Clear UI + reset state for CURRENT session deletion
             messages = emptyList()
@@ -207,19 +221,22 @@ fun ChatScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "Science Book Chatbot",
+                        "EduSphere Chatbot",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold
                         )
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { showHistory = !showHistory }) {
+                    IconButton(onClick = {
+                        keyboardController?.hide()
+                        showHistory = !showHistory }) {
                         Icon(Icons.Default.Menu, contentDescription = "History")
                     }
                 },
                 actions = {
                     IconButton(onClick = {
+                        selectionManager.clearSelection()
                         currentSessionId = UUID.randomUUID().toString()
                         messages = emptyList()
                         showHistory = false
@@ -243,7 +260,6 @@ fun ChatScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 /* -------------------- CHAT LIST -------------------- */
-                /* -------------------- CHAT LIST -------------------- */
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -252,7 +268,7 @@ fun ChatScreen(
                     contentPadding = PaddingValues(bottom = 24.dp) // Prevent last message from being hidden by input field
                 ) {
                     // SHOW PLACEHOLDER WHEN CHAT IS EMPTY
-                    if (messages.isEmpty() && !isLoading) {
+                    if (messages.isEmpty() && !loadingSessions.contains(currentSessionId)) {
                         item {
                             Column(
                                 modifier = Modifier
@@ -343,7 +359,8 @@ fun ChatScreen(
                                                 } else {
                                                     MarkdownMath(
                                                         markdown = text,
-                                                        isUser = false
+                                                        isUser = false,
+                                                        selectionManager = selectionManager
                                                     )
                                                 }
                                             }
@@ -459,7 +476,7 @@ fun ChatScreen(
 
                     Surface(
                         shape = CircleShape,
-                        color = if (isLoading)
+                        color = if (loadingSessions.contains(currentSessionId))
                             MaterialTheme.colorScheme.surfaceVariant
                         else
                             MaterialTheme.colorScheme.primary,
@@ -467,20 +484,22 @@ fun ChatScreen(
                         modifier = Modifier.size(48.dp)
                     ) {
                         IconButton(
-                            enabled = !isLoading,
+                            enabled = !loadingSessions.contains(currentSessionId),
                             onClick = {
                                 keyboardController?.hide()
 
                                 if (userInput.isBlank() && selectedImageUri == null) return@IconButton
+
+                                val requestSessionId = currentSessionId
 
                                 val textToSend = userInput.takeIf { it.isNotBlank() }
                                 val imageToSend = selectedImageUri
 
                                 userInput = ""
                                 selectedImageUri = null
-                                isLoading = true
+                                loadingSessions = loadingSessions + requestSessionId
 
-                                // ✅ SPLIT IMAGE + TEXT INTO SEPARATE MESSAGES
+                                //  SPLIT IMAGE + TEXT INTO SEPARATE MESSAGES
                                 val newMessages = mutableListOf<ChatMessage>()
 
 // 1. Add image-only message (if image exists)
@@ -516,11 +535,13 @@ fun ChatScreen(
                                 messages = messages + newMessages
 
                                 scope.launch {
+                                    try {
                                     /*  KEEP YOUR EXISTING LOGIC UNCHANGED */
                                     if (!sessionCreated && !textToSend.isNullOrBlank()) {
                                         chatDao.insertSession(
                                             ChatSessionEntity(
-                                                sessionId = currentSessionId,
+                                                sessionId = requestSessionId,
+//                                                sessionId = currentSessionId,
                                                 title = textToSend.take(40),
                                                 createdAt = System.currentTimeMillis()
                                             )
@@ -530,7 +551,7 @@ fun ChatScreen(
 
                                     chatDao.insertMessage(
                                         ChatMessageEntity(
-                                            sessionId = currentSessionId,
+                                            sessionId = requestSessionId,
                                             text = textToSend ?: "",
                                             isUser = true,
                                             timestamp = System.currentTimeMillis(),
@@ -664,7 +685,7 @@ fun ChatScreen(
 
                                     chatDao.insertMessage(
                                         ChatMessageEntity(
-                                            sessionId = currentSessionId,
+                                            sessionId = requestSessionId,
                                             text = finalText,
                                             isUser = false,
                                             timestamp = System.currentTimeMillis(),
@@ -673,15 +694,34 @@ fun ChatScreen(
                                         )
                                     )
 
-                                    messages = messages.dropLast(1) +
-                                            ChatMessage(
-                                                text = finalText,
-                                                isUser = false,
-                                                diagramImages = diagramImages,
-                                                mermaidCodeBlocks = finalMermaidBlocks
-                                            )
+                                    withContext(Dispatchers.Main) {
+                                        if (currentSessionId == requestSessionId) {
+                                            if (messages.lastOrNull()?.isStreaming == true) {
+                                                messages = messages.dropLast(1) + ChatMessage(
+                                                    text = finalText,
+                                                    isUser = false,
+                                                    diagramImages = diagramImages,
+                                                    mermaidCodeBlocks = finalMermaidBlocks
+                                                )
+                                            } else {
+                                                messages = messages + ChatMessage(
+                                                    text = finalText,
+                                                    isUser = false,
+                                                    diagramImages = diagramImages,
+                                                    mermaidCodeBlocks = finalMermaidBlocks
+                                                )
+                                            }
 
-                                    isLoading = false
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                Log.e("ChatScreen", "LLM error", e)
+                            } finally {
+                                //  CRITICAL: ALWAYS CLEAN UP LOADING STATE
+                                withContext(Dispatchers.Main) {
+                                    loadingSessions = loadingSessions - requestSessionId
+                                }
+                            }
                                 }
                             }
                         ) {
@@ -703,24 +743,38 @@ fun ChatScreen(
                 onSessionSelected = { sessionId ->
                     scope.launch {
                         val oldMessages = chatDao.getMessages(sessionId)
-
-                        messages = oldMessages.map {
+                        val loadedMessages = oldMessages.map { messageEntity ->
                             ChatMessage(
-                                text = it.text,
-                                isUser = it.isUser,
-                                imageUri = it.imageUri?.let(Uri::parse),
-                                diagramImages = it.diagramImages
+                                text = messageEntity.text,
+                                isUser = messageEntity.isUser,
+                                imageUri = messageEntity.imageUri?.let(Uri::parse),
+                                diagramImages = messageEntity.diagramImages
                                     ?.split(",")
-                                    ?.filter { name -> name.isNotBlank() }
+                                    ?.filter { it.isNotBlank() }
                                     ?: emptyList(),
-                                mermaidCodeBlocks = it.mermaidCodeBlocks
+                                mermaidCodeBlocks = messageEntity.mermaidCodeBlocks
                                     ?.split(",")
-                                    ?.map { code -> code.trim() }
-                                    ?.filter { code -> code.isNotBlank() }
+                                    ?.map { it.trim() }
+                                    ?.filter { it.isNotBlank() }
                                     ?: emptyList()
                             )
                         }
 
+                        //  RESTORE STREAMING BUBBLE IF SESSION IS STILL LOADING
+                        var finalMessages = loadedMessages
+                        if (loadingSessions.contains(sessionId) &&
+                            loadedMessages.isNotEmpty() &&
+                            loadedMessages.last().isUser &&
+                            loadedMessages.lastOrNull()?.isStreaming != true) {
+
+                            finalMessages = loadedMessages + ChatMessage(
+                                text = "",
+                                isUser = false,
+                                isStreaming = true  // ← THIS TRIGGERS BLINKING CURSOR
+                            )
+                        }
+
+                        messages = finalMessages
                         currentSessionId = sessionId
                         sessionCreated = true
                     }
@@ -831,7 +885,8 @@ private fun buildConversationContext(
 @Composable
 fun MarkdownMath(
     markdown: String,
-    isUser: Boolean
+    isUser: Boolean,
+    selectionManager: TextSelectionManager? = null
 ) {
     val context = LocalContext.current
     val textColor = if (isUser)
@@ -846,6 +901,7 @@ fun MarkdownMath(
                 setTextColor(textColor.toArgb())
                 textSize = 20f
                 setTextIsSelectable(true)
+                selectionManager?.register(this)
             }
         },
         update = { textView ->
@@ -860,6 +916,10 @@ fun MarkdownMath(
 
 
             markwon.setMarkdown(textView, markdown)
+        },
+        onRelease = { textView ->
+            // Unregister when view is destroyed
+            selectionManager?.unregister(textView)
         }
     )
 }
@@ -1016,6 +1076,28 @@ fun HistoryDrawer(
                     onSessionDeleted = onSessionDeleted
                 )
             }
+        }
+    }
+}
+
+// Add this at file level (outside any composable)
+class TextSelectionManager {
+    private val textViewRefs = mutableListOf<TextView>()
+
+    fun register(textView: TextView) {
+        textViewRefs.add(textView)
+    }
+
+    fun unregister(textView: TextView) {
+        textViewRefs.remove(textView)
+    }
+
+    fun clearSelection() {
+        textViewRefs.forEach { textView ->
+            textView.clearFocus()
+            // Force deselect by temporarily disabling selection
+            textView.setTextIsSelectable(false)
+            textView.setTextIsSelectable(true)
         }
     }
 }
