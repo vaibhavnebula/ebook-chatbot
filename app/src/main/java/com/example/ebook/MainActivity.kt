@@ -85,6 +85,7 @@ import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.zIndex
 
 
 
@@ -265,7 +266,7 @@ fun ChatScreen(
                         .weight(1f)
                         .padding(vertical = 8.dp),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = 24.dp) // Prevent last message from being hidden by input field
+                    contentPadding = PaddingValues(bottom = 2.dp) // Prevent last message from being hidden by input field
                 ) {
                     // SHOW PLACEHOLDER WHEN CHAT IS EMPTY
                     if (messages.isEmpty() && !loadingSessions.contains(currentSessionId)) {
@@ -284,7 +285,7 @@ fun ChatScreen(
                                     modifier = Modifier.size(64.dp)
                                 )
                                 Text(
-                                    text = "What can I help you?",
+                                    text = "How can i help you ?",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -376,20 +377,13 @@ fun ChatScreen(
                                             }
 
                                             msg.mermaidCodeBlocks.forEach { code ->
-                                                Box(
+                                                MermaidDiagram(
+                                                    code = code,
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .padding(vertical = 8.dp)
-                                                        .height(160.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    MermaidDiagram(
-                                                        code = code,
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .fillMaxHeight()
-                                                    )
-                                                }
+                                                        .wrapContentHeight()
+                                                )
                                             }
                                         }
                                     }
@@ -400,7 +394,7 @@ fun ChatScreen(
 
                         // Small bottom padding so last message isn't clipped
                         item {
-                            Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                         }
                     }
                 }
@@ -447,6 +441,7 @@ fun ChatScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .zIndex(1f)
                         .imePadding()
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 2.dp, top = 0.dp)
@@ -628,24 +623,72 @@ fun ChatScreen(
                                                                                 
                                         Keep the explanation student-friendly.
                                         
-                                        6. DIAGRAM GENERATION RULES (CRITICAL):
+                                        6. DIAGRAM GENERATION RULES (CRITICAL - FOLLOW EXACTLY):
                                            - GENERATE MERMAID WHEN: user requests visuals, explains processes, shows distributions, relationships, timelines, or structures.
-                                           - SELECT TYPE BY CONTEXT:
-                                             • PIE CHART → "percent", "distribution", "parts of whole", "market share"  
-                                               Syntax: `pie title [Name]\n    "[Label]" : [number]`
-                                             • FLOWCHART → workflows, decisions, steps (`flowchart LR/TB`)
-                                             • SEQUENCE → interactions over time (`sequenceDiagram`)
-                                    …    ```
+                                           
+                                           - OUTPUT FORMAT (MANDATORY):
+                                             • Start with ```mermaid on its own line
+                                             • Write valid Mermaid syntax with proper indentation
+                                             • End with ``` on its own line
+                                             • NO text before, after, or between the code fences
+                                             • NO explanations inline with the diagram code
+                                           
+                                           - SYNTAX SAFEGUARDS:
+                                             • Avoid unescaped special characters: () [] {} / \ " ' [[20]]
+                                             • Use quotes for labels with spaces: A["User Input"] not A[User Input] [[23]]
+                                             • Keep diagrams simple—split complex logic into multiple diagrams if needed [[24]]
+                                             • Validate mentally: every arrow --> must connect defined nodes
+                                           
+                                           - EXAMPLE OUTPUT (YOU CAN REFER THIS AS A REFERENCE):
                                         
                                         ```mermaid
                                         flowchart TD
-                                            A[User Query] --> B{Has Image?}
-                                            B -->|Yes| C[Run OCR]
-                                            B -->|No| D[Process Text]
-                                            C --> E[Generate Answer]
+                                            A[Start] --> B{Decision?}
+                                            B -->|Yes| C[Action 1]
+                                            B -->|No| D[Action 2]
+                                            C --> E[End]
                                             D --> E
                                         ```
-                                        7. - Use English by default; switch language only if asked. If input is only a greeting, reply with a greeting only.
+                                        ```mermaid
+                                        pie
+                                            title Composition of Air
+                                            "Nitrogen" : 78
+                                            "Oxygen" : 21
+                                            "Other Gases" : 1
+                                        ```
+
+                                        ```mermaid
+                                        mindmap
+                                          root[Types of Energy]
+                                            Kinetic
+                                              Mechanical
+                                              Thermal
+                                            Potential
+                                              Gravitational
+                                              Chemical
+                                        ```
+                                        ```mermaid
+                                        xychart-beta
+                                            title "Weekly Temperature"
+                                            x-axis [Mon, Tue, Wed, Thu, Fri]
+                                            y-axis "Temp (°C)" 15 --> 35
+                                            bar [22, 25, 20, 28, 30]
+                                            line [22, 25, 20, 28, 30]
+                                        ```
+                                            
+                                        7. CLARITY & EDUCATIONAL STRUCTURE (VERY IMPORTANT)
+
+                                        - The diagram must explain the concept step-by-step logically.
+                                        - Break processes into clear sequential stages.
+                                        - Use meaningful, descriptive node labels (not generic words like Process or Step 1).
+                                        - Show cause-and-effect relationships clearly.
+                                        - Include intermediate steps — do not skip logical transitions.
+                                        - For scientific concepts, represent real-world flow and hierarchy.
+                                        - For student content, ensure diagram is easy to follow for school-level understanding.
+                                        - Use decision nodes {} when conditions exist.
+                                        
+                                        8. - Use English by default; switch language only if asked. If input is only a greeting, reply with a greeting only.
+                                           - if you didnt understand the message then reply simply this Hmm, that text seems a bit random 😊 Can you clarify your question a bit? I’d be happy to help.
 
                                        
                                         $conversationContext
@@ -869,7 +912,7 @@ private fun copyAssetToInternalStorage(
 
 private fun buildConversationContext(
     messages: List<ChatMessage>,
-    maxTurns: Int = 2
+    maxTurns: Int = 1
 ): String {
     val history = messages
         .filter { it.text != null && !it.isStreaming }
