@@ -322,9 +322,9 @@ fun ChatScreen(
                                         tonalElevation = 2.dp,
                                         color =
                                             if (msg.isUser)
-                                                MaterialTheme.colorScheme.primary
+                                                Color(0xFFD9ECFF)
                                             else
-                                                MaterialTheme.colorScheme.surfaceVariant,
+                                                Color(0xFFFFFFFF),
                                         modifier = Modifier.widthIn(max = 300.dp)
                                     ) {
                                         Column(
@@ -354,7 +354,7 @@ fun ChatScreen(
                                                     androidx.compose.foundation.text.selection.SelectionContainer {
                                                         Text(
                                                             text = text,
-                                                            color = MaterialTheme.colorScheme.onPrimary
+                                                            color = Color(0xFF1C1B1F)
                                                         )
                                                     }
                                                 } else {
